@@ -133,5 +133,11 @@ class TrainOptions(BaseOptions):
             "--netD", type=str, default="multiscale", help="(n_layers|multiscale|image)"
         )
         parser.add_argument("--lambda_kld", type=float, default=0.05)
+        parser.add_argument(
+            "--num_res_blocks",
+            type=int,
+            default=6,
+            help="number of residual blocks in G and D",
+        )
         self.isTrain = True
         return parser
