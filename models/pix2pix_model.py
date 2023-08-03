@@ -170,13 +170,16 @@ class Pix2PixModel(nn.Module):
             # fake_image = fake_image.detach()
             # fake_image.requires_grad_()
 
-        pred_fake, pred_real = self.discriminate(
-            input_semantics, fake_image, real_image)
+        if self.opt.netD == 'dpgan':
+            output_D_fake, scores_fake, _ = self.netD(fake_image)
+        else:
+            pred_fake, pred_real = self.discriminate(
+                input_semantics, fake_image, real_image)
 
-        D_losses['D_Fake'] = self.criterionGAN(
-            pred_fake, False, for_discriminator=True)
-        D_losses['D_real'] = self.criterionGAN(
-            pred_real, True, for_discriminator=True)
+            D_losses['D_Fake'] = self.criterionGAN(
+                pred_fake, False, for_discriminator=True)
+            D_losses['D_real'] = self.criterionGAN(
+                pred_real, True, for_discriminator=True)
 
         return D_losses
 

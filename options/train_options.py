@@ -130,7 +130,7 @@ class TrainOptions(BaseOptions):
             "--gan_mode", type=str, default="hinge", help="(ls|original|hinge)"
         )
         parser.add_argument(
-            "--netD", type=str, default="multiscale", help="(n_layers|multiscale|image)"
+            "--netD", type=str, default="multiscale", help="(n_layers|multiscale|image|dpgan)"
         )
         parser.add_argument("--lambda_kld", type=float, default=0.05)
         parser.add_argument(

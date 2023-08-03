@@ -12,12 +12,18 @@ from models.networks.discriminator import *
 from models.networks.generator import *
 from models.networks.encoder import *
 from models.networks.spectral_norm import *
+from models.networks.new_discriminator import *
 import util.util as util
 
 
 def find_network_using_name(target_network_name, filename):
-    target_class_name = target_network_name + filename
-    module_name = 'models.networks.' + filename
+    if target_network_name == 'dpgan' and filename == 'discriminator':
+        target_class_name = 'DPGANDiscriminator'
+        module_name = 'models.networks.new_discriminator'
+    else:
+        target_class_name = target_network_name + filename
+        module_name = 'models.networks.' + filename
+
     network = util.find_class_in_module(target_class_name, module_name)
 
     assert issubclass(

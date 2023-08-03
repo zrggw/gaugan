@@ -3,7 +3,7 @@ from models.networks import spectral_norm
 import jittor
 
 
-class Discrininator(nn.Module):
+class DPGANDiscriminator(nn.Module):
     def __init__(self, opt):
         super().__init__
         self.dis = nn.ModuleList
