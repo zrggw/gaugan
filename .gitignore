@@ -4,3 +4,4 @@ backup
 checkpoints
 train.log
 .idea/
+scratch.py

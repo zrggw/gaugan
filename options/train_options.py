@@ -139,5 +139,15 @@ class TrainOptions(BaseOptions):
             default=6,
             help="number of residual blocks in G and D",
         )
+
+        parser.add_argument('--no_labelmix',
+                            action='store_true',
+                            default=False,
+                            help='if specified, do *not* use LabelMix')
+        parser.add_argument('--no_balancing_inloss',
+                            action='store_true',
+                            default=False,
+                            help='if specified, do *not* use class balancing in the loss function')
+
         self.isTrain = True
         return parser
