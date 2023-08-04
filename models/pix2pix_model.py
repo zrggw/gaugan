@@ -8,7 +8,9 @@ from jittor import nn
 import jittor.transform as transform
 import models.networks as networks
 import util.util as util
+from models.networks.loss import losses_computer
 import warnings
+
 warnings.filterwarnings("ignore")
 
 
@@ -28,13 +30,18 @@ class Pix2PixModel(nn.Module):
 
         # set loss functions
         if opt.isTrain:
-            self.criterionGAN = networks.GANLoss(
-                opt.gan_mode, tensor=self.FloatTensor, opt=self.opt)
-            self.criterionFeat = nn.L1Loss()
-            if not opt.no_vgg_loss:
-                self.criterionVGG = networks.VGGLoss(self.opt.gpu_ids)
-            if opt.use_vae:
-                self.KLDLoss = networks.KLDLoss()
+            if opt.netD == "dpgan":
+                self.losses_computer = losses_computer
+            # Todo: 在这里完善 dpgan中的几个loss, dpgan的GANloss 可能与gaugan相同，能直接用
+            else:
+                self.criterionGAN = networks.GANLoss(
+                    opt.gan_mode, tensor=self.FloatTensor, opt=self.opt
+                )
+                self.criterionFeat = nn.L1Loss()
+                if not opt.no_vgg_loss:
+                    self.criterionVGG = networks.VGGLoss(self.opt.gpu_ids)
+                if opt.use_vae:
+                    self.KLDLoss = networks.KLDLoss()
 
     # Entry point for all calls involving forward pass
     # of deep networks. We used this approach since DataParallel module
@@ -46,18 +53,16 @@ class Pix2PixModel(nn.Module):
         # print("real_image: ", real_image.shape)
         # exit(0)
 
-        if mode == 'generator':
-            g_loss, generated = self.compute_generator_loss(
-                input_semantics, real_image)
+        if mode == "generator":
+            g_loss, generated = self.compute_generator_loss(input_semantics, real_image)
             return g_loss, generated
-        elif mode == 'discriminator':
-            d_loss = self.compute_discriminator_loss(
-                input_semantics, real_image)
+        elif mode == "discriminator":
+            d_loss = self.compute_discriminator_loss(input_semantics, real_image)
             return d_loss
-        elif mode == 'encode_only':
+        elif mode == "encode_only":
             z, mu, logvar = self.encode_z(real_image)
             return mu, logvar
-        elif mode == 'inference':
+        elif mode == "inference":
             with jt.no_grad():
                 fake_image, _ = self.generate_fake(input_semantics, real_image)
             return fake_image
@@ -83,10 +88,10 @@ class Pix2PixModel(nn.Module):
         return optimizer_G, optimizer_D
 
     def save(self, epoch):
-        util.save_network(self.netG, 'G', epoch, self.opt)
-        util.save_network(self.netD, 'D', epoch, self.opt)
+        util.save_network(self.netG, "G", epoch, self.opt)
+        util.save_network(self.netD, "D", epoch, self.opt)
         if self.opt.use_vae:
-            util.save_network(self.netE, 'E', epoch, self.opt)
+            util.save_network(self.netE, "E", epoch, self.opt)
 
     ############################################################################
     # Private helper methods
@@ -98,11 +103,11 @@ class Pix2PixModel(nn.Module):
         netE = networks.define_E(opt) if opt.use_vae else None
 
         if not opt.isTrain or opt.continue_train:
-            netG = util.load_network(netG, 'G', opt.which_epoch, opt)
+            netG = util.load_network(netG, "G", opt.which_epoch, opt)
             if opt.isTrain:
-                netD = util.load_network(netD, 'D', opt.which_epoch, opt)
+                netD = util.load_network(netD, "D", opt.which_epoch, opt)
             if opt.use_vae:
-                netE = util.load_network(netE, 'E', opt.which_epoch, opt)
+                netE = util.load_network(netE, "E", opt.which_epoch, opt)
 
         return netG, netD, netE
 
@@ -112,54 +117,107 @@ class Pix2PixModel(nn.Module):
 
     def preprocess_input(self, data):
         # change data types
-        data['label'] = data['label'].long()
+        data["label"] = data["label"].long()
 
         # create one-hot label map
-        label_map = data['label']
+        label_map = data["label"]
         bs, _, h, w = label_map.size()
-        nc = self.opt.label_nc + 1 if self.opt.contain_dontcare_label else self.opt.label_nc
+        nc = (
+            self.opt.label_nc + 1
+            if self.opt.contain_dontcare_label
+            else self.opt.label_nc
+        )
         input_label = jt.zeros((bs, nc, h, w), dtype=self.FloatTensor)
         input_semantics = input_label.scatter_(1, label_map, jt.float32(1.0))
 
         # concatenate instance map if it exists
         if not self.opt.no_instance:
-            inst_map = data['instance']
+            inst_map = data["instance"]
             instance_edge_map = self.get_edges(inst_map)
-            input_semantics = jt.concat(
-                (input_semantics, instance_edge_map), dim=1)
+            input_semantics = jt.concat((input_semantics, instance_edge_map), dim=1)
 
-        return input_semantics, data['image']
+        return input_semantics, data["image"]
+
+    def align_loss(self, feats, feats_ref):
+        loss_align = 0
+        for f, fr in zip(feats, feats_ref):
+            loss_align += self.MSELoss(f, fr)
+        return loss_align
 
     def compute_generator_loss(self, input_semantics, real_image):
+        """'
+        将dpgan和gangan的g_loss分开计算
+        """
+        if self.opt.netD == "dpgan":
+            loss_G, losses_G_list = self.compute_G_loss_dpgan(
+                self, input_semantics, real_image
+            )
+            # Todo: 完善dpgan G_loss
+        else:
+            G_losses, fake_image = self.compute_G_loss_gaugan(
+                self, input_semantics, real_image
+            )
+            return G_losses, fake_image
+
+    def compute_G_loss_dpgan(self, input_semantics, real_image):
+        G_losses = {}
+
+        fake, KLD_loss = self.generate_fake(
+            input_semantics, real_image, compute_kld_loss=self.opt.use_vae
+        )
+
+        self.netD(input_semantics)
+        loss_G = 0
+        output_D, scores, feats = self.netD(fake)
+        _, _, feats_ref = self.netD(real_image)
+        loss_G_adv = losses_computer.loss(output_D, input_semantics, for_real=True)
+        loss_G += loss_G_adv
+        loss_ms = self.criterionGAN(scores, True, for_discriminator=False)
+        loss_G += loss_ms.item()
+        loss_align = self.align_loss(feats, feats_ref)
+        loss_G += loss_align
+        if not self.opt.no_vgg_loss:
+            loss_G_vgg = self.opt.lambda_vgg * self.criterionVGG(fake, real_image)
+            loss_G += loss_G_vgg
+        else:
+            loss_G_vgg = None
+        return loss_G, [loss_G_adv, loss_G_vgg]
+
+    def compute_G_loss_gaugan(self, input_semantics, real_image):
         G_losses = {}
 
         fake_image, KLD_loss = self.generate_fake(
-            input_semantics, real_image, compute_kld_loss=self.opt.use_vae)
+            input_semantics, real_image, compute_kld_loss=self.opt.use_vae
+        )
 
         if self.opt.use_vae:
-            G_losses['KLD'] = KLD_loss
+            G_losses["KLD"] = KLD_loss
+        if self.opt.netD == "dpgan":
+            output_D_fake, scores_fake, _ = self.netD(fake_image)
+        else:
+            pred_fake, pred_real = self.discriminate(
+                input_semantics, fake_image, real_image
+            )
 
-        pred_fake, pred_real = self.discriminate(
-            input_semantics, fake_image, real_image)
-
-        G_losses['GAN'] = self.criterionGAN(
-            pred_fake, True, for_discriminator=False)
+        G_losses["GAN"] = self.criterionGAN(pred_fake, True, for_discriminator=False)
 
         if not self.opt.no_ganFeat_loss:
             num_D = len(pred_fake)
-            GAN_Feat_loss = self.FloatTensor(0.)
+            GAN_Feat_loss = self.FloatTensor(0.0)
             for i in range(num_D):  # for each discriminator
                 # last output is the final prediction, so we exclude it
                 num_intermediate_outputs = len(pred_fake[i]) - 1
                 for j in range(num_intermediate_outputs):  # for each layer output
                     unweighted_loss = self.criterionFeat(
-                        pred_fake[i][j], pred_real[i][j].detach())
+                        pred_fake[i][j], pred_real[i][j].detach()
+                    )
                     GAN_Feat_loss += unweighted_loss * self.opt.lambda_feat / num_D
-            G_losses['GAN_Feat'] = GAN_Feat_loss
+            G_losses["GAN_Feat"] = GAN_Feat_loss
 
         if not self.opt.no_vgg_loss:
-            G_losses['VGG'] = self.criterionVGG(
-                fake_image, real_image) * self.opt.lambda_vgg
+            G_losses["VGG"] = (
+                self.criterionVGG(fake_image, real_image) * self.opt.lambda_vgg
+            )
 
         return G_losses, fake_image
 
@@ -170,16 +228,19 @@ class Pix2PixModel(nn.Module):
             # fake_image = fake_image.detach()
             # fake_image.requires_grad_()
 
-        if self.opt.netD == 'dpgan':
+        if self.opt.netD == "dpgan":
             output_D_fake, scores_fake, _ = self.netD(fake_image)
         else:
             pred_fake, pred_real = self.discriminate(
-                input_semantics, fake_image, real_image)
+                input_semantics, fake_image, real_image
+            )
 
-            D_losses['D_Fake'] = self.criterionGAN(
-                pred_fake, False, for_discriminator=True)
-            D_losses['D_real'] = self.criterionGAN(
-                pred_real, True, for_discriminator=True)
+            D_losses["D_Fake"] = self.criterionGAN(
+                pred_fake, False, for_discriminator=True
+            )
+            D_losses["D_real"] = self.criterionGAN(
+                pred_real, True, for_discriminator=True
+            )
 
         return D_losses
 
@@ -198,8 +259,9 @@ class Pix2PixModel(nn.Module):
 
         fake_image = self.netG(input_semantics, z=z)
 
-        assert (not compute_kld_loss) or self.opt.use_vae, \
-            "You cannot compute KLD loss if opt.use_vae == False"
+        assert (
+            not compute_kld_loss
+        ) or self.opt.use_vae, "You cannot compute KLD loss if opt.use_vae == False"
 
         return fake_image, KLD_loss
 
@@ -230,24 +292,20 @@ class Pix2PixModel(nn.Module):
             fake = []
             real = []
             for p in pred:
-                fake.append([tensor[:tensor.size(0) // 2] for tensor in p])
-                real.append([tensor[tensor.size(0) // 2:] for tensor in p])
+                fake.append([tensor[: tensor.size(0) // 2] for tensor in p])
+                real.append([tensor[tensor.size(0) // 2 :] for tensor in p])
         else:
-            fake = pred[:pred.size(0) // 2]
-            real = pred[pred.size(0) // 2:]
+            fake = pred[: pred.size(0) // 2]
+            real = pred[pred.size(0) // 2 :]
 
         return fake, real
 
     def get_edges(self, t):
         edge = self.ByteTensor(t.size()).zero_()
-        edge[:, :, :, 1:] = edge[:, :, :, 1:] | (
-            t[:, :, :, 1:] != t[:, :, :, :-1])
-        edge[:, :, :, :-1] = edge[:, :, :, :-
-                                  1] | (t[:, :, :, 1:] != t[:, :, :, :-1])
-        edge[:, :, 1:, :] = edge[:, :, 1:, :] | (
-            t[:, :, 1:, :] != t[:, :, :-1, :])
-        edge[:, :, :-1, :] = edge[:, :, :-1,
-                                  :] | (t[:, :, 1:, :] != t[:, :, :-1, :])
+        edge[:, :, :, 1:] = edge[:, :, :, 1:] | (t[:, :, :, 1:] != t[:, :, :, :-1])
+        edge[:, :, :, :-1] = edge[:, :, :, :-1] | (t[:, :, :, 1:] != t[:, :, :, :-1])
+        edge[:, :, 1:, :] = edge[:, :, 1:, :] | (t[:, :, 1:, :] != t[:, :, :-1, :])
+        edge[:, :, :-1, :] = edge[:, :, :-1, :] | (t[:, :, 1:, :] != t[:, :, :-1, :])
         return edge.float()
 
     def reparameterize(self, mu, logvar):

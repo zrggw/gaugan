@@ -1,9 +1,9 @@
 from jittor import nn
 from models.networks import spectral_norm
 import jittor
+from models.networks.base_network import BaseNetwork
 
-
-class DPGANDiscriminator(nn.Module):
+class DPGANDiscriminator(BaseNetwork):
     def __init__(self, opt):
         super().__init__
         self.dis = nn.ModuleList
