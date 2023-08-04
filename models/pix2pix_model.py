@@ -31,7 +31,7 @@ class Pix2PixModel(nn.Module):
         # set loss functions
         if opt.isTrain:
             if opt.netD == "dpgan":
-                self.losses_computer = losses_computer
+                self.losses_computer = losses_computer(self.opt)
                 self.criterionGAN = networks.GANLoss(
                     opt.gan_mode, tensor=self.FloatTensor, opt=self.opt
                 )
@@ -230,25 +230,73 @@ class Pix2PixModel(nn.Module):
         return G_losses, fake_image
 
     def compute_discriminator_loss(self, input_semantics, real_image):
+        if self.netD == "dpgan":
+            loss_D, D_losses = self.compute_D_loss_dpgan(input_semantics, real_image)
+            return loss_D, D_losses
+        else:
+            D_losses = self.compute_D_loss_gaugan(input_semantics, real_image)
+            return D_losses
+
+    def compute_D_loss_dpgan(self, input_semantics, real_image):
+        """
+
+        Args:
+            input_semantics: one-hot
+            real_image:
+
+        Returns:
+            loss_D: sum of all losses
+            D_losses: dict of all losses
+
+        """
         D_losses = {}
         with jt.no_grad():
             fake_image, _ = self.generate_fake(input_semantics, real_image)
             # fake_image = fake_image.detach()
             # fake_image.requires_grad_()
 
-        if self.opt.netD == "dpgan":
-            output_D_fake, scores_fake, _ = self.netD(fake_image)
-        else:
-            pred_fake, pred_real = self.discriminate(
-                input_semantics, fake_image, real_image
-            )
+        # TODO: 完善dpgan D_loss, 注意：输入的语义图似乎是one-hot形式
+        loss_D = 0
+        output_D_fake, scores_fake, _ = self.netD(fake_image)
+        loss_D_fake = losses_computer.loss(output_D_fake, input_semantics, for_real=False)
+        loss_ms_fake = self.GAN_loss(scores_fake, False, for_discriminator=True)
+        loss_D += loss_D_fake + loss_ms_fake
+        D_losses["adv_fake"] = loss_D_fake
+        D_losses["ms_fake"] = loss_ms_fake
+        output_D_real, scores_real, _ = self.netD(real_image)
+        loss_D_real = losses_computer.loss(output_D_real, input_semantics, for_real=True)
+        loss_ms_real = self.GAN_loss(scores_real, True, for_discriminator=True)
+        loss_D += loss_D_real + loss_ms_real
+        D_losses["adv_real"] = loss_D_real
+        D_losses["ms_real"] = loss_ms_real
+        if not self.opt.no_labelmix:
+            mixed_inp, mask = generate_labelmix(input_semantics, fake_image, real_image)
+            output_D_mixed, _, _ = self.netD(mixed_inp)
+            loss_D_lm = self.opt.lambda_labelmix * losses_computer.loss_labelmix(mask, output_D_mixed,
+                                                                                 output_D_fake,
+                                                                                 output_D_real)
+            loss_D += loss_D_lm
+            D_losses["lm_loss"] = loss_D_lm
 
-            D_losses["D_Fake"] = self.criterionGAN(
-                pred_fake, False, for_discriminator=True
-            )
-            D_losses["D_real"] = self.criterionGAN(
-                pred_real, True, for_discriminator=True
-            )
+        return loss_D, D_losses
+
+    def compute_D_loss_gaugan(self, input_semantics, real_image):
+        D_losses = {}
+        with jt.no_grad():
+            fake_image, _ = self.generate_fake(input_semantics, real_image)
+            # fake_image = fake_image.detach()
+            # fake_image.requires_grad_()
+
+        pred_fake, pred_real = self.discriminate(
+            input_semantics, fake_image, real_image
+        )
+
+        D_losses["D_Fake"] = self.criterionGAN(
+            pred_fake, False, for_discriminator=True
+        )
+        D_losses["D_real"] = self.criterionGAN(
+            pred_real, True, for_discriminator=True
+        )
 
         return D_losses
 
@@ -323,3 +371,13 @@ class Pix2PixModel(nn.Module):
 
     def use_gpu(self):
         return len(self.opt.gpu_ids) > 0
+
+
+def generate_labelmix(label, fake_image, real_image):
+    target_map = jt.argmax(label, dim=1, keepdims=True)
+    all_classes = jt.unique(target_map)
+    for c in all_classes:
+        target_map[target_map == c] = jt.randint(0, 2, (1,))
+    target_map = target_map.float()
+    mixed_image = target_map * real_image + (1 - target_map) * fake_image
+    return mixed_image, target_map
