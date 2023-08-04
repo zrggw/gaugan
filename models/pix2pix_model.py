@@ -155,10 +155,11 @@ class Pix2PixModel(nn.Module):
         将dpgan和gangan的g_loss分开计算
         """
         if self.opt.netD == "dpgan":
-            loss_G, losses_G_list = self.compute_G_loss_dpgan(
+            loss_G, fake_image = self.compute_G_loss_dpgan(
                 self, input_semantics, real_image
             )
             # Todo: 完善dpgan G_loss
+            return loss_G, fake_image
         else:
             G_losses, fake_image = self.compute_G_loss_gaugan(
                 self, input_semantics, real_image
@@ -168,11 +169,10 @@ class Pix2PixModel(nn.Module):
     def compute_G_loss_dpgan(self, input_semantics, real_image):
         G_losses = {}
 
-        fake, KLD_loss = self.generate_fake(
+        fake, _ = self.generate_fake(
             input_semantics, real_image, compute_kld_loss=self.opt.use_vae
         )
 
-        self.netD(input_semantics)
         loss_G = 0
         output_D, scores, feats = self.netD(fake)
         _, _, feats_ref = self.netD(real_image)
@@ -180,16 +180,18 @@ class Pix2PixModel(nn.Module):
         G_losses["adv"] = loss_G_adv
         loss_G += loss_G_adv
         loss_ms = self.criterionGAN(scores, True, for_discriminator=False)
+        G_losses["ms"] = loss_ms
         loss_G += loss_ms.item()
         loss_align = self.align_loss(feats, feats_ref)
         loss_G += loss_align
+        G_losses["align"] = loss_align
         if not self.opt.no_vgg_loss:
             loss_G_vgg = self.opt.lambda_vgg * self.criterionVGG(fake, real_image)
             loss_G += loss_G_vgg
             G_losses["vgg"] = loss_G_vgg
         else:
             loss_G_vgg = None
-        return loss_G, G_losses
+        return G_losses, fake
 
     def compute_G_loss_gaugan(self, input_semantics, real_image):
         G_losses = {}
@@ -232,7 +234,7 @@ class Pix2PixModel(nn.Module):
     def compute_discriminator_loss(self, input_semantics, real_image):
         if self.netD == "dpgan":
             loss_D, D_losses = self.compute_D_loss_dpgan(input_semantics, real_image)
-            return loss_D, D_losses
+            return D_losses
         else:
             D_losses = self.compute_D_loss_gaugan(input_semantics, real_image)
             return D_losses
@@ -258,27 +260,31 @@ class Pix2PixModel(nn.Module):
         # TODO: 完善dpgan D_loss, 注意：输入的语义图似乎是one-hot形式
         loss_D = 0
         output_D_fake, scores_fake, _ = self.netD(fake_image)
-        loss_D_fake = losses_computer.loss(output_D_fake, input_semantics, for_real=False)
-        loss_ms_fake = self.GAN_loss(scores_fake, False, for_discriminator=True)
+        loss_D_fake = losses_computer.loss(
+            output_D_fake, input_semantics, for_real=False
+        )
+        loss_ms_fake = self.criterionGAN(scores_fake, False, for_discriminator=True)
         loss_D += loss_D_fake + loss_ms_fake
         D_losses["adv_fake"] = loss_D_fake
         D_losses["ms_fake"] = loss_ms_fake
         output_D_real, scores_real, _ = self.netD(real_image)
-        loss_D_real = losses_computer.loss(output_D_real, input_semantics, for_real=True)
-        loss_ms_real = self.GAN_loss(scores_real, True, for_discriminator=True)
+        loss_D_real = losses_computer.loss(
+            output_D_real, input_semantics, for_real=True
+        )
+        loss_ms_real = self.criterionGAN(scores_real, True, for_discriminator=True)
         loss_D += loss_D_real + loss_ms_real
         D_losses["adv_real"] = loss_D_real
         D_losses["ms_real"] = loss_ms_real
         if not self.opt.no_labelmix:
             mixed_inp, mask = generate_labelmix(input_semantics, fake_image, real_image)
             output_D_mixed, _, _ = self.netD(mixed_inp)
-            loss_D_lm = self.opt.lambda_labelmix * losses_computer.loss_labelmix(mask, output_D_mixed,
-                                                                                 output_D_fake,
-                                                                                 output_D_real)
+            loss_D_lm = self.opt.lambda_labelmix * losses_computer.loss_labelmix(
+                mask, output_D_mixed, output_D_fake, output_D_real
+            )
             loss_D += loss_D_lm
             D_losses["lm_loss"] = loss_D_lm
 
-        return loss_D, D_losses
+        return D_losses
 
     def compute_D_loss_gaugan(self, input_semantics, real_image):
         D_losses = {}
@@ -291,12 +297,8 @@ class Pix2PixModel(nn.Module):
             input_semantics, fake_image, real_image
         )
 
-        D_losses["D_Fake"] = self.criterionGAN(
-            pred_fake, False, for_discriminator=True
-        )
-        D_losses["D_real"] = self.criterionGAN(
-            pred_real, True, for_discriminator=True
-        )
+        D_losses["D_Fake"] = self.criterionGAN(pred_fake, False, for_discriminator=True)
+        D_losses["D_real"] = self.criterionGAN(pred_real, True, for_discriminator=True)
 
         return D_losses
 

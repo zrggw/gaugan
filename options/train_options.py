@@ -130,7 +130,10 @@ class TrainOptions(BaseOptions):
             "--gan_mode", type=str, default="hinge", help="(ls|original|hinge)"
         )
         parser.add_argument(
-            "--netD", type=str, default="multiscale", help="(n_layers|multiscale|image|dpgan)"
+            "--netD",
+            type=str,
+            default="dpgan",
+            help="(n_layers|multiscale|image|dpgan)",
         )
         parser.add_argument("--lambda_kld", type=float, default=0.05)
         parser.add_argument(
@@ -140,14 +143,18 @@ class TrainOptions(BaseOptions):
             help="number of residual blocks in G and D",
         )
 
-        parser.add_argument('--no_labelmix',
-                            action='store_true',
-                            default=False,
-                            help='if specified, do *not* use LabelMix')
-        parser.add_argument('--no_balancing_inloss',
-                            action='store_true',
-                            default=False,
-                            help='if specified, do *not* use class balancing in the loss function')
+        parser.add_argument(
+            "--no_labelmix",
+            action="store_true",
+            default=False,
+            help="if specified, do *not* use LabelMix",
+        )
+        parser.add_argument(
+            "--no_balancing_inloss",
+            action="store_true",
+            default=False,
+            help="if specified, do *not* use class balancing in the loss function",
+        )
 
         self.isTrain = True
         return parser
