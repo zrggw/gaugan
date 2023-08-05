@@ -178,8 +178,8 @@ class Pix2PixModel(nn.Module):
         loss_G = 0
         output_D, scores, feats = self.netD(fake)
         _, _, feats_ref = self.netD(real_image)
-        loss_G_adv = self.losses_computer.loss(
-            input=output_D, label=input_semantics, for_real=True
+        loss_G_adv = losses_computer.loss(
+            self, input=output_D, label=input_semantics, for_real=True
         )
         G_losses["adv"] = loss_G_adv
         loss_G += loss_G_adv
@@ -237,7 +237,7 @@ class Pix2PixModel(nn.Module):
 
     def compute_discriminator_loss(self, input_semantics, real_image):
         if self.opt.netD == "dpgan":
-            D_losses = self.compute_D_loss_dpgan(input_semantics, real_image)
+            loss_D, D_losses = self.compute_D_loss_dpgan(input_semantics, real_image)
             return D_losses
         else:
             D_losses = self.compute_D_loss_gaugan(input_semantics, real_image)
@@ -264,16 +264,16 @@ class Pix2PixModel(nn.Module):
         # TODO: 完善dpgan D_loss, 注意：输入的语义图似乎是one-hot形式
         loss_D = 0
         output_D_fake, scores_fake, _ = self.netD(fake_image)
-        loss_D_fake = self.losses_computer.loss(
-            input=output_D_fake, label=input_semantics, for_real=False
+        loss_D_fake = losses_computer.loss(
+            self, input=output_D_fake, label=input_semantics, for_real=False
         )
         loss_ms_fake = self.criterionGAN(scores_fake, False, for_discriminator=True)
         loss_D += loss_D_fake + loss_ms_fake
         D_losses["adv_fake"] = loss_D_fake
         D_losses["ms_fake"] = loss_ms_fake
         output_D_real, scores_real, _ = self.netD(real_image)
-        loss_D_real = self.losses_computer.loss(
-            input=output_D_real, label=input_semantics, for_real=True
+        loss_D_real = losses_computer.loss(
+            self, input=output_D_real, label=input_semantics, for_real=True
         )
         loss_ms_real = self.criterionGAN(scores_real, True, for_discriminator=True)
         loss_D += loss_D_real + loss_ms_real

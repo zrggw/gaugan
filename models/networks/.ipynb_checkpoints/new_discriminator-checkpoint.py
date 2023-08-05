@@ -78,6 +78,7 @@ class DPGANDiscriminator(BaseNetwork):
         encoder_res = list()
         dis_list = list()
         for i in range(len(self.body_down)):
+            print('down:', i, x.shape)
             x = self.body_down[i](x)
             encoder_res.append(x)
 
@@ -89,6 +90,7 @@ class DPGANDiscriminator(BaseNetwork):
         return_feats = list()
         x = self.body_up[0](x)
         for i in range(1, len(self.body_down)):
+            print('up', i, x.shape)
             x = self.body_up[i](jittor.concat((encoder_res[-i - 1], x), dim=1))
             return_feats.append(x)
         ans = self.layer_up_last(x)
