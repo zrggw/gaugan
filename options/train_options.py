@@ -71,7 +71,7 @@ class TrainOptions(BaseOptions):
         parser.add_argument(
             "--niter_decay",
             type=int,
-            default=200,
+            default=100,
             help="# of iter to linearly decay learning rate to zero",
         )
         parser.add_argument("--optimizer", type=str, default="adam")
@@ -155,7 +155,12 @@ class TrainOptions(BaseOptions):
             default=False,
             help="if specified, do *not* use class balancing in the loss function",
         )
-        parser.add_argument('--lambda_labelmix', type=float, default=10.0, help='weight for LabelMix regularization')
-        
+        parser.add_argument(
+            "--lambda_labelmix",
+            type=float,
+            default=10.0,
+            help="weight for LabelMix regularization",
+        )
+
         self.isTrain = True
         return parser
