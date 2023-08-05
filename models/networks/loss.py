@@ -154,7 +154,7 @@ def get_class_balancing(opt, input, label):
         num_of_classes = (class_occurence > 0).sum()
         # coefficients = torch.reciprocal(class_occurence) * torch.numel(label) / (num_of_classes * label.shape[1])
         coefficients = label.numel() / (num_of_classes * label.shape[1]) / class_occurence
-        integers = jt.argmax(label, dim=1, keepdims=True)[0]
+        integers = jt.argmax(label, dim=1, keepdims=True)
         if opt.contain_dontcare_label:
             coefficients[0] = 0
         weight_map = coefficients[integers]
@@ -166,7 +166,7 @@ def get_class_balancing(opt, input, label):
 def get_n1_target(opt, input, label, target_is_real):
     targets = get_target_tensor(opt, input, target_is_real)
     num_of_classes = label.shape[1]
-    integers = jt.argmax(label, dim=1)[0]
+    integers = jt.argmax(label, dim=1)
     targets = targets[:, 0, :, :] * num_of_classes
     integers += targets.long()
     integers = jt.clamp(integers, min_v=num_of_classes-1) - num_of_classes + 1
@@ -178,27 +178,3 @@ def get_target_tensor(opt, input, target_is_real):
         return jt.float32(1).fill_(1.0).requires_grad_(False).expand_as(input)
     else:
         return jt.float32(1).fill_(0.0).requires_grad_(False).expand_as(input)
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--no_balancing_inloss",
-        action="store_true",
-        default=False,
-        help="if specified, do *not* use class balancing in the loss function",
-    )
-    parser.add_argument(
-        "--contain_dontcare_label",
-        action="store_true",
-        default=False,
-        help="if specified, do *not* use class balancing in the loss function",
-    )
-    opt = parser.parse_args()
-
-    x_input = jt.randn((4, 3, 3, 3))
-    x_label = jt.randint(0, 5, shape=(4, 5, 3, 3))
-
-    _ = get_class_balancing(opt, x_input, x_label)
