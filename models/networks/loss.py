@@ -14,8 +14,14 @@ from models.networks.architecture import VGG19
 # but it abstracts away the need to create the target label tensor
 # that has the same size as the input
 class GANLoss(nn.Module):
-    def __init__(self, gan_mode, target_real_label=1.0, target_fake_label=0.0,
-                 tensor=jt.float32, opt=None):
+    def __init__(
+        self,
+        gan_mode,
+        target_real_label=1.0,
+        target_fake_label=0.0,
+        tensor=jt.float32,
+        opt=None,
+    ):
         super(GANLoss, self).__init__()
         self.real_label = target_real_label
         self.fake_label = target_fake_label
@@ -25,16 +31,16 @@ class GANLoss(nn.Module):
         self.Tensor = tensor
         self.gan_mode = gan_mode
         self.opt = opt
-        if gan_mode == 'ls':
+        if gan_mode == "ls":
             pass
-        elif gan_mode == 'original':
+        elif gan_mode == "original":
             pass
-        elif gan_mode == 'w':
+        elif gan_mode == "w":
             pass
-        elif gan_mode == 'hinge':
+        elif gan_mode == "hinge":
             pass
         else:
-            raise ValueError('Unexpected gan_mode {}'.format(gan_mode))
+            raise ValueError("Unexpected gan_mode {}".format(gan_mode))
 
     def get_target_tensor(self, input, target_is_real):
         if target_is_real:
@@ -50,29 +56,30 @@ class GANLoss(nn.Module):
 
     def get_zero_tensor(self, input):
         if self.zero_tensor is None:
-            self.zero_tensor = self.Tensor(0.)
+            self.zero_tensor = self.Tensor(0.0)
             # self.zero_tensor.requires_grad_(False)
         return self.zero_tensor.expand_as(input)
 
     def loss(self, input, target_is_real, for_discriminator=True):
-        if self.gan_mode == 'original':  # cross entropy loss
+        if self.gan_mode == "original":  # cross entropy loss
             target_tensor = self.get_target_tensor(input, target_is_real)
             loss = nn.binary_cross_entropy_with_logits(input, target_tensor)
             return loss
-        elif self.gan_mode == 'ls':
+        elif self.gan_mode == "ls":
             target_tensor = self.get_target_tensor(input, target_is_real)
             return nn.mse_loss(input, target_tensor)
-        elif self.gan_mode == 'hinge':
+        elif self.gan_mode == "hinge":
             if for_discriminator:
                 if target_is_real:
                     minval = jt.minimum(input - 1, self.get_zero_tensor(input))
                     loss = -jt.mean(minval)
                 else:
-                    minval = jt.minimum(-input - 1,
-                                        self.get_zero_tensor(input))
+                    minval = jt.minimum(-input - 1, self.get_zero_tensor(input))
                     loss = -jt.mean(minval)
             else:
-                assert target_is_real, "The generator's hinge loss must be aiming for real"
+                assert (
+                    target_is_real
+                ), "The generator's hinge loss must be aiming for real"
                 loss = -jt.mean(input)
             return loss
         else:
@@ -90,8 +97,7 @@ class GANLoss(nn.Module):
             for pred_i in input:
                 if isinstance(pred_i, list):
                     pred_i = pred_i[-1]
-                loss_tensor = self.loss(
-                    pred_i, target_is_real, for_discriminator)
+                loss_tensor = self.loss(pred_i, target_is_real, for_discriminator)
                 bs = 1 if len(loss_tensor.size()) == 0 else loss_tensor.size(0)
                 new_loss = jt.mean(loss_tensor.view(bs, -1), dim=1)
                 loss += new_loss
@@ -112,8 +118,7 @@ class VGGLoss(nn.Module):
         x_vgg, y_vgg = self.vgg(x), self.vgg(y)
         loss = 0
         for i in range(len(x_vgg)):
-            loss += self.weights[i] * \
-                self.criterion(x_vgg[i], y_vgg[i].detach())
+            loss += self.weights[i] * self.criterion(x_vgg[i], y_vgg[i].detach())
         return loss
 
 
@@ -123,18 +128,18 @@ class KLDLoss(nn.Module):
         return -0.5 * jt.sum(1 + logvar - mu.pow(2) - logvar.exp())
 
 
-class losses_computer():
+class losses_computer:
     def __init__(self, opt):
         self.opt = opt
         if not opt.no_labelmix:
             self.labelmix_function = jt.nn.MSELoss()
 
     def loss(self, input, label, for_real):
-        #--- balancing classes ---
+        # --- balancing classes ---
         weight_map = get_class_balancing(self.opt, input, label)
-        #--- n+1 loss ---
+        # --- n+1 loss ---
         target = get_n1_target(self.opt, input, label, for_real)
-        loss = nn.cross_entropy_loss(input, target, reduction='none')
+        loss = nn.cross_entropy_loss(input, target, reduction="none")
         if for_real:
             loss = jt.mean(loss * weight_map[:, 0, :, :])
         else:
@@ -142,7 +147,7 @@ class losses_computer():
         return loss
 
     def loss_labelmix(self, mask, output_D_mixed, output_D_fake, output_D_real):
-        mixed_D_output = mask*output_D_real+(1-mask)*output_D_fake
+        mixed_D_output = mask * output_D_real + (1 - mask) * output_D_fake
         return self.labelmix_function(mixed_D_output, output_D_mixed)
 
 
@@ -153,8 +158,10 @@ def get_class_balancing(opt, input, label):
             class_occurence[0] = 0
         num_of_classes = (class_occurence > 0).sum()
         # coefficients = torch.reciprocal(class_occurence) * torch.numel(label) / (num_of_classes * label.shape[1])
-        coefficients = label.numel() / (num_of_classes * label.shape[1]) / class_occurence
-        integers = jt.argmax(label, dim=1, keepdims=True)
+        coefficients = (
+            label.numel() / (num_of_classes * label.shape[1]) / class_occurence
+        )
+        integers = jt.argmax(label, dim=1, keepdims=True)[0]
         if opt.contain_dontcare_label:
             coefficients[0] = 0
         weight_map = coefficients[integers]
@@ -169,7 +176,7 @@ def get_n1_target(opt, input, label, target_is_real):
     integers = jt.argmax(label, dim=1)
     targets = targets[:, 0, :, :] * num_of_classes
     integers += targets.long()
-    integers = jt.clamp(integers, min_v=num_of_classes-1) - num_of_classes + 1
+    integers = jt.clamp(integers, min_v=num_of_classes - 1) - num_of_classes + 1
     return integers
 
 

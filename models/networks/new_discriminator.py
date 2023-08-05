@@ -3,10 +3,10 @@ from models.networks import spectral_norm
 import jittor
 from models.networks.base_network import BaseNetwork
 
+
 class DPGANDiscriminator(BaseNetwork):
     def __init__(self, opt):
         super().__init__
-        self.dis = nn.ModuleList
         output_channel = opt.semantic_nc + 1  # for N+1 loss
         self.channels = [
             3,
@@ -43,30 +43,30 @@ class DPGANDiscriminator(BaseNetwork):
             [
                 nn.Sequential(
                     nn.Conv2d(256, 64, 3, padding=1, stride=2),
-                    nn.LeakyReLU(0.2, False),
+                    nn.LeakyReLU(scale=0.2),
                     nn.Conv2d(64, 64, 3, padding=1),
                     nn.BatchNorm2d(64),
-                    nn.LeakyReLU(0.2, False),
+                    nn.LeakyReLU(scale=0.2),
                     nn.Conv2d(64, 64, 3, padding=1),
                     nn.BatchNorm2d(64),
-                    nn.LeakyReLU(0.2, False),
+                    nn.LeakyReLU(scale=0.2),
                     nn.Conv2d(64, 64, 3, padding=1),
                     nn.BatchNorm2d(64),
-                    nn.LeakyReLU(0.2, False),
+                    nn.LeakyReLU(scale=0.2),
                     nn.Conv2d(64, 1, 3, padding=1),
                 ),
                 nn.Sequential(
                     nn.Conv2d(512, 64, 3, padding=1, stride=2),
-                    nn.LeakyReLU(0.2, False),
+                    nn.LeakyReLU(scale=0.2),
                     nn.Conv2d(64, 64, 3, padding=1),
                     nn.BatchNorm2d(64),
-                    nn.LeakyReLU(0.2, False),
+                    nn.LeakyReLU(scale=0.2),
                     nn.Conv2d(64, 64, 3, padding=1),
                     nn.BatchNorm2d(64),
-                    nn.LeakyReLU(0.2, False),
+                    nn.LeakyReLU(scale=0.2),
                     nn.Conv2d(64, 64, 3, padding=1),
                     nn.BatchNorm2d(64),
-                    nn.LeakyReLU(0.2, False),
+                    nn.LeakyReLU(scale=0.2),
                     nn.Conv2d(64, 1, 3, padding=1),
                 ),
             ]
@@ -96,8 +96,10 @@ class DPGANDiscriminator(BaseNetwork):
 
 
 class residual_block_D(nn.Module):
-    def __init__(self, up_or_down, fin, fout, opt, first=False) -> None:
-        super.__init__()
+    def __init__(self, fin, fout, opt, up_or_down, first=False) -> None:
+        super().__init__()
+        self.fin = fin
+        self.fout = fout
         self.up_or_down = up_or_down
         norm_layer = spectral_norm
         self.first = first
@@ -122,35 +124,35 @@ class residual_block_D(nn.Module):
         )
         if self.learned_shortcut:
             self.conv_s = norm_layer(nn.Conv2d(fin, fout, 1, 1, 0))
-            if self.up_or_down > 0:
-                self.sampling = nn.Upsample(scale_factor=2)
-            elif self.up_or_down < 0:
-                self.sampling = nn.AvgPool2d(2)
-            else:
-                self.sampling = nn.Sequential()
+        if self.up_or_down > 0:
+            self.sampling = nn.Upsample(scale_factor=2)
+        elif self.up_or_down < 0:
+            self.sampling = nn.AvgPool2d(2)
+        else:
+            self.sampling = nn.Sequential()
 
     def shortcut(self, x):
         if self.first:
-            if self.learned_shortcut:
-                x = self.conv_s(x)
             if self.up_or_down < 0:
                 x = self.sampling(x)
+            if self.learned_shortcut:
+                x = self.conv_s(x)
             x_s = x
         else:
             if self.up_or_down > 0:
                 x = self.sampling(x)
-            if self.up_or_down < 0:
-                x = self.sampling(x)
             if self.learned_shortcut:
                 x = self.conv_s(x)
+            if self.up_or_down < 0:
+                x = self.sampling(x)
             x_s = x
         return x_s
 
     def execute(self, x):
-        x = self.shortcut(x)
+        x_s = self.shortcut(x)
         dx = self.conv1(x)
         dx = self.conv2(dx)
         if self.up_or_down < 0:
             dx = self.sampling(dx)
-        out = x + dx
+        out = x_s + dx
         return out

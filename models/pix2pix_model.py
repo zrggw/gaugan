@@ -37,6 +37,8 @@ class Pix2PixModel(nn.Module):
                 )
                 if not opt.no_vgg_loss:
                     self.criterionVGG = networks.VGGLoss(self.opt.gpu_ids)
+                if opt.use_vae:
+                    self.KLDLoss = networks.KLDLoss()
                 self.MSELoss = nn.MSELoss(reduction="mean")
                 # Todo: 在这里完善 dpgan中的几个loss, dpgan的GANloss 可能与gaugan相同，能直接用
             else:
@@ -156,7 +158,7 @@ class Pix2PixModel(nn.Module):
         """
         if self.opt.netD == "dpgan":
             loss_G, fake_image = self.compute_G_loss_dpgan(
-                self, input_semantics, real_image
+                input_semantics=input_semantics, real_image=real_image
             )
             # Todo: 完善dpgan G_loss
             return loss_G, fake_image
@@ -176,7 +178,9 @@ class Pix2PixModel(nn.Module):
         loss_G = 0
         output_D, scores, feats = self.netD(fake)
         _, _, feats_ref = self.netD(real_image)
-        loss_G_adv = losses_computer.loss(output_D, input_semantics, for_real=True)
+        loss_G_adv = losses_computer.loss(
+            self, input=output_D, label=input_semantics, for_real=True
+        )
         G_losses["adv"] = loss_G_adv
         loss_G += loss_G_adv
         loss_ms = self.criterionGAN(scores, True, for_discriminator=False)
