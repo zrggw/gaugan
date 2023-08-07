@@ -39,6 +39,7 @@ class Pix2PixModel(nn.Module):
                     self.criterionVGG = networks.VGGLoss(self.opt.gpu_ids)
                 if opt.use_vae:
                     self.KLDLoss = networks.KLDLoss()
+                self.criterionFeat = nn.L1Loss()
                 self.MSELoss = nn.MSELoss(reduction="mean")
                 # Todo: 在这里完善 dpgan中的几个loss, dpgan的GANloss 可能与gaugan相同，能直接用
             else:
@@ -149,7 +150,8 @@ class Pix2PixModel(nn.Module):
     def align_loss(self, feats, feats_ref):
         loss_align = 0
         for f, fr in zip(feats, feats_ref):
-            loss_align += self.MSELoss(f, fr)
+            loss_align += self.criterionFeat(f, fr)
+        loss_align = loss_align * self.opt.lambda_feat
         return loss_align
 
     def compute_generator_loss(self, input_semantics, real_image):
@@ -171,27 +173,24 @@ class Pix2PixModel(nn.Module):
     def compute_G_loss_dpgan(self, input_semantics, real_image):
         G_losses = {}
 
-        fake, _ = self.generate_fake(
+        fake, KLD_loss = self.generate_fake(
             input_semantics, real_image, compute_kld_loss=self.opt.use_vae
         )
+        if self.opt.use_vae:
+            G_losses["KLD"] = KLD_loss
 
-        loss_G = 0
         output_D, scores, feats = self.netD(fake)
         _, _, feats_ref = self.netD(real_image)
         loss_G_adv = self.losses_computer.loss(
             input=output_D, label=input_semantics, for_real=True
         )
         G_losses["adv"] = loss_G_adv
-        loss_G += loss_G_adv
         loss_ms = self.criterionGAN(scores, True, for_discriminator=False)
         G_losses["ms"] = loss_ms
-        loss_G += loss_ms.item()
         loss_align = self.align_loss(feats, feats_ref)
-        loss_G += loss_align
         G_losses["align"] = loss_align
         if not self.opt.no_vgg_loss:
             loss_G_vgg = self.opt.lambda_vgg * self.criterionVGG(fake, real_image)
-            loss_G += loss_G_vgg
             G_losses["vgg"] = loss_G_vgg
         else:
             loss_G_vgg = None
@@ -206,12 +205,10 @@ class Pix2PixModel(nn.Module):
 
         if self.opt.use_vae:
             G_losses["KLD"] = KLD_loss
-        if self.opt.netD == "dpgan":
-            output_D_fake, scores_fake, _ = self.netD(fake_image)
-        else:
-            pred_fake, pred_real = self.discriminate(
-                input_semantics, fake_image, real_image
-            )
+
+        pred_fake, pred_real = self.discriminate(
+            input_semantics, fake_image, real_image
+        )
 
         G_losses["GAN"] = self.criterionGAN(pred_fake, True, for_discriminator=False)
 
@@ -261,14 +258,11 @@ class Pix2PixModel(nn.Module):
             # fake_image = fake_image.detach()
             # fake_image.requires_grad_()
 
-        # TODO: 完善dpgan D_loss, 注意：输入的语义图似乎是one-hot形式
-        loss_D = 0
         output_D_fake, scores_fake, _ = self.netD(fake_image)
         loss_D_fake = self.losses_computer.loss(
             input=output_D_fake, label=input_semantics, for_real=False
         )
         loss_ms_fake = self.criterionGAN(scores_fake, False, for_discriminator=True)
-        loss_D += loss_D_fake + loss_ms_fake
         D_losses["adv_fake"] = loss_D_fake
         D_losses["ms_fake"] = loss_ms_fake
         output_D_real, scores_real, _ = self.netD(real_image)
@@ -276,16 +270,17 @@ class Pix2PixModel(nn.Module):
             input=output_D_real, label=input_semantics, for_real=True
         )
         loss_ms_real = self.criterionGAN(scores_real, True, for_discriminator=True)
-        loss_D += loss_D_real + loss_ms_real
         D_losses["adv_real"] = loss_D_real
         D_losses["ms_real"] = loss_ms_real
         if not self.opt.no_labelmix:
             mixed_inp, mask = generate_labelmix(input_semantics, fake_image, real_image)
             output_D_mixed, _, _ = self.netD(mixed_inp)
             loss_D_lm = self.opt.lambda_labelmix * self.losses_computer.loss_labelmix(
-                mask=mask, output_D_mixed=output_D_mixed, output_D_fake=output_D_fake, output_D_real=output_D_real
+                mask=mask,
+                output_D_mixed=output_D_mixed,
+                output_D_fake=output_D_fake,
+                output_D_real=output_D_real,
             )
-            loss_D += loss_D_lm
             D_losses["lm_loss"] = loss_D_lm
 
         return D_losses
