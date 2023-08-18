@@ -49,8 +49,9 @@ sh test.sh
 ```
 
 此前需要：
-1. 将label与img的映射关系（label_to_img.json）放置在gaugan目录下
-2. 修改test.sh，其内容为：
+1.将label与img的映射关系（label_to_img.json）放置在gaugan目录下
+2.修改test.sh，其内容为：
+                
 ```bash
 CUDA_VISIBLE_DEVICES="0" python test.py  \
 --input_path {测试数据集路径（即labels文件夹所在路径），它提供label mask图} \
