@@ -60,4 +60,4 @@ CUDA_VISIBLE_DEVICES="0" python test.py  \
 
 ## 致谢
 
-我们将DP-GAN论文的 `pytorch` 版本的源代码，迁移到了 `Jittor` 框架当中，并且借鉴了计图挑战赛中【王文琦、陈顾骏】小组所复现的'Jittor'框架下的GauGAN模型以及开源社区 `Spectral Normalization` 的代码，以及重度参考了原论文的官方开源代码：[SPADE](https://github.com/NVlabs/SPADE)。
+我们将DP-GAN论文的 `pytorch` 版本的源代码，迁移到了 `Jittor` 框架当中，并且借鉴了计图挑战赛中【王文琦、陈顾骏】小组所复现的 `Jittor` 框架下的GauGAN模型以及开源社区 `Spectral Normalization` 的代码，以及重度参考了原论文的官方开源代码：[SPADE](https://github.com/NVlabs/SPADE)。
