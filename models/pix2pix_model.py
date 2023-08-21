@@ -37,9 +37,7 @@ class Pix2PixModel(nn.Module):
                 )
                 if not opt.no_vgg_loss:
                     self.criterionVGG = networks.VGGLoss(self.opt.gpu_ids)
-                if opt.use_vae:
-                    self.KLDLoss = networks.KLDLoss()
-                self.criterionFeat = nn.L1Loss()
+                self.criterionFeat = nn.MSELoss()
                 self.MSELoss = nn.MSELoss(reduction="mean")
                 # Todo: 在这里完善 dpgan中的几个loss, dpgan的GANloss 可能与gaugan相同，能直接用
             else:
