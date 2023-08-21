@@ -173,11 +173,9 @@ class Pix2PixModel(nn.Module):
     def compute_G_loss_dpgan(self, input_semantics, real_image):
         G_losses = {}
 
-        fake, KLD_loss = self.generate_fake(
-            input_semantics, real_image, compute_kld_loss=self.opt.use_vae
-        )
-        if self.opt.use_vae:
-            G_losses["KLD"] = KLD_loss
+        fake = self.netG(input_semantics)
+        # if self.opt.use_vae:
+        #     G_losses["KLD"] = KLD_loss
 
         output_D, scores, feats = self.netD(fake)
         _, _, feats_ref = self.netD(real_image)

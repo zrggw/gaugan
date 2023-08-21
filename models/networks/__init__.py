@@ -17,17 +17,21 @@ import util.util as util
 
 
 def find_network_using_name(target_network_name, filename):
-    if target_network_name == 'dpgan' and filename == 'discriminator':
-        target_class_name = 'DPGANDiscriminator'
-        module_name = 'models.networks.new_discriminator'
+    if target_network_name == "dpgan" and filename == "discriminator":
+        target_class_name = "DPGANDiscriminator"
+        module_name = "models.networks.new_discriminator"
+    elif target_network_name == "dpgan" and filename == "generator":
+        target_class_name = "DP_GAN_Generator"
+        module_name = "models.networks.new_generator"
     else:
         target_class_name = target_network_name + filename
-        module_name = 'models.networks.' + filename
+        module_name = "models.networks." + filename
 
     network = util.find_class_in_module(target_class_name, module_name)
 
-    assert issubclass(
-        network, BaseNetwork), "Class %s should be a subclass of BaseNetwork" % network
+    assert issubclass(network, BaseNetwork), (
+        "Class %s should be a subclass of BaseNetwork" % network
+    )
 
     return network
 
@@ -35,12 +39,12 @@ def find_network_using_name(target_network_name, filename):
 def modify_commandline_options(parser, is_train):
     opt, _ = parser.parse_known_args()
 
-    netG_cls = find_network_using_name(opt.netG, 'generator')
+    netG_cls = find_network_using_name(opt.netG, "generator")
     parser = netG_cls.modify_commandline_options(parser, is_train)
     if is_train:
-        netD_cls = find_network_using_name(opt.netD, 'discriminator')
+        netD_cls = find_network_using_name(opt.netD, "discriminator")
         parser = netD_cls.modify_commandline_options(parser, is_train)
-    netE_cls = find_network_using_name('conv', 'encoder')
+    netE_cls = find_network_using_name("conv", "encoder")
     parser = netE_cls.modify_commandline_options(parser, is_train)
 
     return parser
@@ -54,16 +58,16 @@ def create_network(cls, opt):
 
 
 def define_G(opt):
-    netG_cls = find_network_using_name(opt.netG, 'generator')
+    netG_cls = find_network_using_name(opt.netG, "generator")
     return create_network(netG_cls, opt)
 
 
 def define_D(opt):
-    netD_cls = find_network_using_name(opt.netD, 'discriminator')
+    netD_cls = find_network_using_name(opt.netD, "discriminator")
     return create_network(netD_cls, opt)
 
 
 def define_E(opt):
     # there exists only one encoder type
-    netE_cls = find_network_using_name('conv', 'encoder')
+    netE_cls = find_network_using_name("conv", "encoder")
     return create_network(netE_cls, opt)

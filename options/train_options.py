@@ -13,7 +13,7 @@ class TrainOptions(BaseOptions):
         parser.add_argument(
             "--display_freq",
             type=int,
-            default=4000,
+            default=100,
             help="frequency of showing training results on screen",
         )
         parser.add_argument(
@@ -160,6 +160,20 @@ class TrainOptions(BaseOptions):
             type=float,
             default=10.0,
             help="weight for LabelMix regularization",
+        )
+
+        # for generator
+        parser.add_argument(
+            "--channels_G",
+            type=int,
+            default=64,
+            help="# of gen filters in first conv layer in generator",
+        )
+        parser.add_argument(
+            "--no_3dnoise",
+            action="store_true",
+            default=False,
+            help="if specified, do *not* concatenate noise to label maps",
         )
 
         self.isTrain = True
